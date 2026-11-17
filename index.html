@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مطبخي - مجسم 3D</title>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,"Segoe UI",Tahoma,Arial,sans-serif;background:#e6e9ed;color:#222}
+  body{display:flex;flex-direction:column}
+  #stage{position:relative;flex:1;min-height:0}
+  #c3d,#planWrap,#notesWrap{position:absolute;inset:0}
+  #c3d canvas{display:block;width:100%;height:100%}
+  #planWrap,#notesWrap{overflow:auto;background:#fff;padding:12px;box-sizing:border-box}
+  .hidden{display:none !important}
+  #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;background:#e6e9ed;z-index:5;line-height:1.8}
+  #err{position:absolute;top:8px;left:8px;right:8px;background:#fdecea;color:#8a1c12;border:1px solid #f5b5ae;border-radius:8px;padding:8px 12px;z-index:9;font-size:13px;direction:ltr;text-align:left}
+  #hint{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.85);border-radius:8px;padding:6px 10px;font-size:12px;pointer-events:none}
+  #bar{background:#fff;border-top:1px solid #d5d8dc;padding:8px;display:flex;flex-direction:column;gap:6px}
+  .row{display:flex;gap:6px;overflow-x:auto;white-space:nowrap;align-items:center;padding-bottom:2px}
+  button{font:inherit;font-size:14px;padding:7px 12px;border:1px solid #bfc4ca;border-radius:8px;background:#f6f7f8;cursor:pointer;flex:none}
+  button.on{background:#2f3a45;color:#fff;border-color:#2f3a45}
+  label.chk{display:inline-flex;gap:5px;align-items:center;font-size:14px;flex:none}
+  input[type=range]{width:90px}
+  #planWrap svg{width:100%;max-width:680px;display:block;margin:0 auto;height:auto}
+  .ctr{fill:#efe7d6;stroke:#333;stroke-width:.8}
+  .snk{fill:#cfd8dc;stroke:#333;stroke-width:.6}
+  .app{fill:#e3e6ea;stroke:#333;stroke-width:.8}
+  .lb{font-size:6px;fill:#222}
+  .dm line{stroke:#c0392b;stroke-width:.6}
+  .dm text{fill:#c0392b;font-size:6.2px}
+  #notesWrap{line-height:1.9;font-size:15px}
+  #notesWrap h2{margin:4px 0 8px}
+  #notesWrap h3{margin:18px 0 6px;color:#2f3a45}
+  #notesWrap li{margin-bottom:5px}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage">
+  <div id="c3d"></div>
+  <div id="hint">اسحب للتدوير · صباعين للتقريب والتحريك</div>
+  <div id="planWrap" class="hidden"></div>
+  <div id="notesWrap" class="hidden">
+    <h2>ملاحظات وافتراضات</h2>
+    <p>كل المقاسات بالسنتي. الكروكي هو المرجع الأساسي، والمكتوب وضّح فيه.</p>
+
+    <h3>تعارضات لقيتها بين الكروكي والمكتوب (وأنا اخترت إيه)</h3>
+    <ol>
+      <li><b>ترتيب حيطة الشباك:</b> الكروكي: حيطة 50 ← شباك 75 (والحوض تحته) ← عمود 55 ← حيطة 45. المكتوب: حيطة 50 ← عمود 55 ← شباك 75 ← حيطة 45. اتبعت الكروكي. زرار «ترتيب حيطة الشباك» تحت بيبدّل بين الاتنين.</li>
+      <li><b>المساحة الوسطى:</b> المكتوب تقريبًا 200، لكن عرض الأوضة 225 ومنه 65 + 65 للوحدتين، يعني الباقي <b>95 سم</b> (والكروكي كاتب حوالي 100). استخدمت 95 لأن 200 مستحيل تجي في عرض 225.</li>
+      <li><b>طول الأوضة:</b> الحيطة الشمال: 105 + 85 + 146 = <b>336</b>. الحيطة اليمين المكتوب إجماليها 332. خدت 336 كطول للأوضة، وآخر حتة فاضية جنب الباب بقت <b>41 بدل 37</b> (تقديري).</li>
+      <li><b>عمود جنب الباب:</b> الكروكي بيبين بروزه صغير (حوالي 8) والمكتوب 25. اتبعت المكتوب 25.</li>
+    </ol>
+
+    <h3>حاجات مش مكتوبة عندك وقدّرتها</h3>
+    <ul>
+      <li>سُمك الحيطان 15. ارتفاع فتحة الدخول 210. الشباك من 105 لـ 215 من الأرض.</li>
+      <li>نهاية خط النيش (الوتر المائل): بياخد 40 طول من عمق 65 لحد حوالي 19 عند الحيطة، قراءة نسبية من الرسم.</li>
+      <li>البوتجاز 5 شعلات (من شكل الدواير في الرسم)، عمقه 62.</li>
+      <li>الثلاجة ارتفاعها 178 والديب فريزر 170 (واقف بأدراج). فوقهم وحدة علوية تبدأ من 190.</li>
+      <li>الوحدات العلوية من 150 لـ 280، عمق 35، على صفين (باب سفلي + باب علوي لحد السقف).</li>
+      <li>فوق النيش وحدة علوية مثلثة بنفس زاوية النيش.</li>
+      <li>الحوض 71×41 جوه فتحة الـ 75 تحت الشباك، بحوض واحد.</li>
+      <li>مفيش شفاط فوق البوتجاز لأنك قلت مفيش أجهزة زيادة.</li>
+      <li>الألوان والخامات اقتراح مني وتتغيّر بسهولة.</li>
+    </ul>
+  </div>
+  <div id="loading">جاري تحميل المجسم...<br>(المكتبة بتتحمل من الإنترنت، لو الشاشة فضلت كده اتأكد إن النت شغال)</div>
+</div>
+
+<div id="bar">
+  <div class="row" id="tabs">
+    <button data-tab="3d" class="on">مجسم 3D</button>
+    <button data-tab="plan">المسقط 2D بالأبعاد</button>
+    <button data-tab="notes">ملاحظات وافتراضات</button>
+  </div>
+  <div class="row" id="views"></div>
+  <div class="row" id="opts">
+    <label class="chk"><input type="checkbox" id="optUp" checked> الوحدات العلوية</label>
+    <label class="chk"><input type="checkbox" id="optSh" checked> ظلال</label>
+    <label class="chk"><input type="checkbox" id="optSun" checked> نور الشباك</label>
+    <label class="chk">الإضاءة <input type="range" id="optExp" min="0.5" max="2" step="0.05" value="1"></label>
+    <button id="swap">ترتيب حيطة الشباك: زي الكروكي</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ===================== الأبعاد (سم) ===================== */
+const W = 225, L = 336, H = 280, T = 15;          // عرض، طول، ارتفاع، سمك الحيطان
+const BASE_H = 90, TOP_T = 3, PL = 10, BD = 65;   // ارتفاع السفلي مع الرخامة، سمك الرخامة، السوكل، العمق
+const UD = 35, UY = 150, UTIER = 42;              // عمق العلوي، بداية العلوي، ارتفاع الصف العلوي
+const OPEN = [140, 225], OPEN_H = 210;            // فتحة الدخول (85) وارتفاعها (تقدير)
+const SINK_Z = [12, 53];                          // مكان الحوض من الحيطة
+const SILL = 105, HEAD = 215;                     // الشباك (تقدير)
+const FR = 1.8;                                   // سمك واجهة الباب
+
+let order = 'sketch';   // 'sketch' = زي الكروكي | 'text' = زي المكتوب
+function fw() {
+  return order === 'sketch' ? { win: [50, 125], col: [125, 180] } : { win: [105, 180], col: [50, 105] };
+}
+
+const $ = s => document.querySelector(s);
+function showErr(msg) {
+  let d = $('#err');
+  if (!d) { d = document.createElement('div'); d.id = 'err'; $('#stage').appendChild(d); }
+  d.textContent = 'Error: ' + msg;
+}
+window.addEventListener('error', e => showErr(e.message));
+window.addEventListener('unhandledrejection', e => showErr(String(e.reason)));
+
+/* ===================== المشهد ===================== */
+const c3d = $('#c3d');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+c3d.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe6e9ed);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.45;
+
+const camera = new THREE.PerspectiveCamera(55, 1, 1, 4000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.minDistance = 5;
+controls.maxDistance = 1500;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8cfc0, 0.9));
+
+const lamp = new THREE.PointLight(0xfff0dc, 1.6, 0, 0);
+lamp.position.set(W / 2, 262, 190);
+lamp.castShadow = true;
+lamp.shadow.mapSize.set(1024, 1024);
+lamp.shadow.camera.near = 5; lamp.shadow.camera.far = 700;
+lamp.shadow.bias = -0.0006; lamp.shadow.normalBias = 0.6;
+scene.add(lamp);
+
+const sun = new THREE.DirectionalLight(0xfff3df, 2.2);
+sun.position.set(112, 420, -250);
+sun.target.position.set(112, 0, 150);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+const sc = sun.shadow.camera;
+sc.left = -320; sc.right = 320; sc.top = 320; sc.bottom = -320; sc.near = 10; sc.far = 1200;
+sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.8;
+scene.add(sun); scene.add(sun.target);
+
+/* ===================== خامات ===================== */
+function canvasTex(w, h, draw, rx = 1, ry = 1) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  t.repeat.set(rx, ry);
+  return t;
+}
+const floorTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#c4bcae'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 3500; i++) {
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,' + (Math.random() * 0.06) + ')' : 'rgba(0,0,0,' + (Math.random() * 0.06) + ')';
+    g.fillRect(Math.random() * w, Math.random() * h, 3, 3);
+  }
+  g.strokeStyle = '#8e8678'; g.lineWidth = 7; g.strokeRect(0, 0, w, h);
+}, W / 60, L / 60);
+const counterTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#e8e2d5'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 2500; i++) {
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,' + (Math.random() * 0.25) + ')' : 'rgba(120,110,95,' + (Math.random() * 0.12) + ')';
+    g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+  }
+}, 1 / 80, 1 / 80);
+const tileBase = canvasTex(256, 256, (g, w, h) => {
+  g.fillStyle = '#ddd6c9'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#b9b1a3'; g.lineWidth = 2;
+  const rows = 6, rh = h / rows, tw = w / 2;
+  for (let r = 0; r < rows; r++) {
+    const y = r * rh;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+    const off = (r % 2) * tw / 2;
+    for (let x = -off; x < w; x += tw) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + rh); g.stroke(); }
+  }
+});
+function tileMat(wcm, hcm) {
+  const t = tileBase.clone(); t.needsUpdate = true; t.repeat.set(wcm / 60, hcm / 60);
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.3, metalness: 0 });
+}
+
+const M = {
+  wall: new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95 }),
+  floor: new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.55 }),
+  ceiling: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }),
+  cab: new THREE.MeshStandardMaterial({ color: 0xe9e4da, roughness: 0.72 }),
+  carcass: new THREE.MeshStandardMaterial({ color: 0xe0dace, roughness: 0.8 }),
+  plinth: new THREE.MeshStandardMaterial({ color: 0x34322f, roughness: 0.9 }),
+  counter: new THREE.MeshStandardMaterial({ map: counterTex, roughness: 0.28, metalness: 0 }),
+  handle: new THREE.MeshStandardMaterial({ color: 0x2c2c2c, roughness: 0.4, metalness: 0.7 }),
+  inox: new THREE.MeshStandardMaterial({ color: 0xcfd2d6, roughness: 0.28, metalness: 0.9 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x2a2b2d, roughness: 0.6, metalness: 0.3 }),
+  black: new THREE.MeshStandardMaterial({ color: 0x0e0f11, roughness: 0.12, metalness: 0.2 }),
+  burner: new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.5, metalness: 0.6 }),
+  frame: new THREE.MeshStandardMaterial({ color: 0xf5f5f3, roughness: 0.5 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0xcfe6f2, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false }),
+  sky: new THREE.MeshBasicMaterial({ color: 0xdfeefa, toneMapped: false }),
+  lamp: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
+};
+
+/* ===================== أدوات البناء ===================== */
+let model, uppersG, target, wallParts, backdrop;
+
+function newModel() {
+  if (model) {
+    scene.remove(model);
+    model.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  }
+  model = new THREE.Group(); scene.add(model);
+  uppersG = new THREE.Group(); model.add(uppersG);
+  wallParts = { north: [], south: [], west: [], east: [] };
+  backdrop = null;
+  target = model;
+}
+function add(m, shadow = true, recv = true) {
+  m.castShadow = shadow; m.receiveShadow = recv; target.add(m); return m;
+}
+// صندوق بإحداثيات العالم (min/max)
+function boxW(x0, x1, y0, y1, z0, z1, mat, shadow = true) {
+  const g = new THREE.BoxGeometry(Math.max(x1 - x0, 0.01), Math.max(y1 - y0, 0.01), Math.max(z1 - z0, 0.01));
+  const m = new THREE.Mesh(g, mat);
+  m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  return add(m, shadow);
+}
+// صندوق بإحداثيات الحيطة: s = المسافة على طول الحيطة، d = العمق من الحيطة
+function B(frame, s0, s1, d0, d1, y0, y1, mat, shadow = true) {
+  let x0, x1, z0, z1;
+  if (frame === 'top') { x0 = s0; x1 = s1; z0 = d0; z1 = d1; }
+  else if (frame === 'left') { x0 = d0; x1 = d1; z0 = s0; z1 = s1; }
+  else if (frame === 'right') { x0 = W - d1; x1 = W - d0; z0 = s0; z1 = s1; }
+  else { x0 = s0; x1 = s1; z0 = L - d1; z1 = L - d0; }
+  return boxW(x0, x1, y0, y1, z0, z1, mat, shadow);
+}
+// مجسم من مضلع في المسقط
+function prism(pts, y0, y1, mat, holes = []) {
+  const sh = new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], -p[1])));
+  holes.forEach(h => sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], -p[1])))));
+  const g = new THREE.ExtrudeGeometry(sh, { depth: y1 - y0, bevelEnabled: false });
+  g.rotateX(-Math.PI / 2); g.translate(0, y0, 0);
+  return add(new THREE.Mesh(g, mat));
+}
+function tileBox(frame, s0, s1, d0, d1, y0, y1) {
+  return B(frame, s0, s1, d0, d1, y0, y1, tileMat(s1 - s0, y1 - y0), false);
+}
+function shiftedLine(p0, p1, inset) {
+  const dx = p1[0] - p0[0], dz = p1[1] - p0[1], len = Math.hypot(dx, dz);
+  const nx = -dz / len, nz = dx / len;
+  return { ox: p0[0] - nx * inset, oz: p0[1] - nz * inset, dx, dz };
+}
+const xAt = (ln, z) => ln.ox + (z - ln.oz) * ln.dx / ln.dz;
+const zAt = (ln, x) => ln.oz + (x - ln.ox) * ln.dz / ln.dx;
+
+// باب مائل (للنيش)
+function diagDoor(p0, p1, y0, y1, hy0, hy1) {
+  const dx = p1[0] - p0[0], dz = p1[1] - p0[1], len = Math.hypot(dx, dz), th = FR;
+  const nx = -dz / len, nz = dx / len;
+  const g = new THREE.Group();
+  g.position.set((p0[0] + p1[0]) / 2 - nx * th / 2, 0, (p0[1] + p1[1]) / 2 - nz * th / 2);
+  g.rotation.y = -Math.atan2(dz, dx);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(len - 0.6, y1 - y0, th), M.cab);
+  door.position.set(0, (y0 + y1) / 2, 0);
+  door.castShadow = true; door.receiveShadow = true; g.add(door);
+  if (hy1 > hy0) {
+    const h = new THREE.Mesh(new THREE.BoxGeometry(1, hy1 - hy0, 2.2), M.handle);
+    h.position.set(len / 2 - 5, (hy0 + hy1) / 2, th / 2 + 1.1);
+    h.castShadow = true; g.add(h);
+  }
+  target.add(g);
+}
+
+/* ===================== واجهات الوحدات ===================== */
+function baseFronts(frame, a, b, kind) {
+  const y0 = PL + 0.4, y1 = BASE_H - TOP_T - 0.4, g = 0.3, w = b - a, d0 = BD - FR, d1 = BD;
+  if (kind === 'drawers') {
+    const fr = [0.24, 0.38, 0.38], total = y1 - y0; let y = y1;
+    fr.forEach(f => {
+      const h = total * f;
+      B(frame, a + g, b - g, d0, d1, y - h + g, y - g, M.cab);
+      const cx = (a + b) / 2, hw = Math.min(w * 0.3, 9);
+      B(frame, cx - hw, cx + hw, d1, d1 + 2.2, y - g - 5, y - g - 4, M.handle);
+      y -= h;
+    });
+  } else {
+    const n = w > 56 ? 2 : 1, dw = w / n;
+    for (let i = 0; i < n; i++) {
+      const sa = a + i * dw, sb = sa + dw;
+      B(frame, sa + g, sb - g, d0, d1, y0, y1, M.cab);
+      const hx = n === 2 ? (i === 0 ? sb - 4 : sa + 4) : sb - 4;
+      B(frame, hx - 0.5, hx + 0.5, d1, d1 + 2.2, y1 - 24, y1 - 4, M.handle);
+    }
+  }
+}
+function upperFronts(frame, fa, fb, y0) {
+  const w = fb - fa, n = Math.max(1, Math.ceil(w / 56)), mw = w / n, g = 0.3, ym = H - UTIER;
+  for (let i = 0; i < n; i++) {
+    const a = fa + i * mw, b = a + mw;
+    B(frame, a + g, b - g, UD - FR, UD, y0 + g, ym - g, M.cab);
+    B(frame, a + g, b - g, UD - FR, UD, ym + g, H - g, M.cab);
+    const hs = (i % 2 === 0) ? b - 4 : a + 4;
+    B(frame, hs - 0.5, hs + 0.5, UD, UD + 2.2, y0 + 3, y0 + 22, M.handle);
+  }
+}
+
+/* ===================== البناء ===================== */
+function buildShell(wa, wb, ca, cb) {
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(W, L).rotateX(-Math.PI / 2), M.floor);
+  fl.position.set(W / 2, 0, L / 2); add(fl, false);
+  const ce = new THREE.Mesh(new THREE.PlaneGeometry(W, L).rotateX(Math.PI / 2), M.ceiling);
+  ce.position.set(W / 2, H, L / 2); add(ce, false, false);
+  const lampDisc = new THREE.Mesh(new THREE.CircleGeometry(22, 48).rotateX(Math.PI / 2), M.lamp);
+  lampDisc.position.set(W / 2, H - 0.2, 190); add(lampDisc, false, false);
+
+  const wbx = (side, x0, x1, y0, y1, z0, z1) => { wallParts[side].push(boxW(x0, x1, y0, y1, z0, z1, M.wall)); };
+  wbx('north', -T, wa, 0, H, -T, 0);
+  wbx('north', wa, wb, 0, SILL, -T, 0);
+  wbx('north', wa, wb, HEAD, H, -T, 0);
+  wbx('north', wb, W + T, 0, H, -T, 0);
+  wbx('south', -T, OPEN[0], 0, H, L, L + T);
+  wbx('south', OPEN[0], OPEN[1], OPEN_H, H, L, L + T);
+  wbx('south', OPEN[1], W + T, 0, H, L, L + T);
+  wbx('west', -T, 0, 0, H, 0, L);
+  wbx('east', W, W + T, 0, H, 0, L);
+
+  boxW(ca, cb, 0, H, 0, 15, M.wall);          // عمود حيطة الشباك (بروز 15)
+  boxW(65, 140, 0, H, L - 25, L, M.wall);     // عمود جنب الباب (بروز 25)
+
+  // الشباك
+  const cx = (wa + wb) / 2, fz0 = -9.5, fz1 = -5.5, fb = 3;
+  boxW(wa, wb, SILL, SILL + fb, fz0, fz1, M.frame);
+  boxW(wa, wb, HEAD - fb, HEAD, fz0, fz1, M.frame);
+  boxW(wa, wa + fb, SILL, HEAD, fz0, fz1, M.frame);
+  boxW(wb - fb, wb, SILL, HEAD, fz0, fz1, M.frame);
+  boxW(cx - 1.5, cx + 1.5, SILL, HEAD, fz0, fz1, M.frame);
+  boxW(wa + fb, wb - fb, SILL + fb, HEAD - fb, -7.6, -7.4, M.glass, false);
+  boxW(wa - 2, wb + 2, SILL, SILL + 1.5, -5.4, 3, M.counter);
+  const bd = new THREE.Mesh(new THREE.PlaneGeometry(240, 180), M.sky);
+  bd.position.set(cx, 160, -45); add(bd, false, false); backdrop = bd;
+}
+
+function buildBase(wa, wb) {
+  const CH = BASE_H - TOP_T;
+  const c = (x0, x1, z0, z1, y0 = PL, y1 = CH) => boxW(x0, x1, y0, y1, z0, z1, M.carcass);
+  const pl = (x0, x1, z0, z1) => boxW(x0, x1, 0, PL, z0, z1, M.plinth);
+  const hx0 = wa + 2, hx1 = wb - 2, hz0 = SINK_Z[0], hz1 = SINK_Z[1];
+
+  // الهيكل: الشريط اللي على الحيطة الأمامية (مع فتحة الحوض)
+  c(0, wa, 0, BD - FR); c(wb, W, 0, BD - FR);
+  c(wa, wb, 0, hz0); c(wa, wb, hz1, BD - FR);
+  c(wa, hx0, hz0, hz1); c(hx1, wb, hz0, hz1);
+  c(hx0, hx1, hz0, hz1, PL, 64);
+  pl(0, W, 0, BD - 5);
+  // الشمال
+  c(0, BD - FR, BD - 5, 105); c(0, BD - FR, 190, L);
+  pl(0, BD - 5, BD - 5, 105); pl(0, BD - 5, 190, L);
+  // اليمين (الوحدات 125)
+  c(W - BD + FR, W, BD - 5, 125);
+  pl(W - BD + 5, W, BD - 5, 125);
+  // النيش
+  const L1 = shiftedLine([160, 255], [206, 295], FR);
+  prism([[W, 255], [xAt(L1, 255), 255], [xAt(L1, 295), 295], [W, 295]], PL, CH, M.carcass);
+  prism([[W, 257], [170, 257], [207, 291], [W, 291]], 0, PL, M.plinth);
+
+  // الرخام
+  const hole = [[hx0, hz0], [hx1, hz0], [hx1, hz1], [hx0, hz1]];
+  prism([[0, 0], [W, 0], [W, 125], [160, 125], [160, 65], [65, 65], [65, 105], [0, 105]], CH, BASE_H, M.counter, [hole]);
+  prism([[0, 190], [65, 190], [65, L], [0, L]], CH, BASE_H, M.counter);
+  prism([[W, 255], [160, 255], [206, 295], [W, 295]], CH, BASE_H, M.counter);
+
+  // الواجهات (الأبواب والأدراج)
+  const sa = Math.max(65, wa), sb = Math.min(160, wb);
+  if (sa > 65) baseFronts('top', 65, sa, 'drawers');
+  baseFronts('top', sa, sb, 'doors');
+  if (sb < 160) baseFronts('top', sb, 160, 'drawers');
+  baseFronts('left', 65, 105, 'drawers');
+  baseFronts('left', 190, 190 + 146 / 3, 'drawers');
+  baseFronts('left', 190 + 146 / 3, 190 + 2 * 146 / 3, 'doors');
+  baseFronts('left', 190 + 2 * 146 / 3, L, 'drawers');
+  baseFronts('right', 65, 125, 'doors');
+  diagDoor([160, 255], [206, 295], PL + 0.4, CH - 0.4, 60, 82);
+
+  // سيراميك بين الرخامة والعلوي
+  tileBox('left', 0, L, 0, 1, BASE_H, UY);
+  tileBox('right', 0, 125, 0, 1, BASE_H, UY);
+  tileBox('right', 255, 295, 0, 1, BASE_H, UY);
+  const wcol = fw().col, win = [wa, wb];
+  const segs = [[0, W]];
+  [win, wcol].forEach(h => {
+    const next = [];
+    segs.forEach(sg => {
+      if (h[1] <= sg[0] || h[0] >= sg[1]) { next.push(sg); return; }
+      if (h[0] > sg[0]) next.push([sg[0], h[0]]);
+      if (h[1] < sg[1]) next.push([h[1], sg[1]]);
+    });
+    segs.length = 0; next.forEach(n => segs.push(n));
+  });
+  segs.forEach(sg => tileBox('top', sg[0], sg[1], 0, 1, BASE_H, UY));
+  tileBox('top', wcol[0], wcol[1], 15, 16, BASE_H, UY);
+  tileBox('top', wa, wb, 0, 1, BASE_H, SILL);
+
+  buildSink(hx0, hx1, hz0, hz1);
+}
+
+function buildSink(hx0, hx1, hz0, hz1) {
+  const wl = 0.6, fy0 = 70, fy1 = BASE_H, r = 1.4;
+  boxW(hx0, hx1, fy0 - 0.6, fy0, hz0, hz1, M.inox);
+  boxW(hx0, hx0 + wl, fy0, fy1, hz0, hz1, M.inox);
+  boxW(hx1 - wl, hx1, fy0, fy1, hz0, hz1, M.inox);
+  boxW(hx0, hx1, fy0, fy1, hz0, hz0 + wl, M.inox);
+  boxW(hx0, hx1, fy0, fy1, hz1 - wl, hz1, M.inox);
+  boxW(hx0 - r, hx1 + r, fy1, fy1 + 0.5, hz0 - r, hz0, M.inox);
+  boxW(hx0 - r, hx1 + r, fy1, fy1 + 0.5, hz1, hz1 + r, M.inox);
+  boxW(hx0 - r, hx0, fy1, fy1 + 0.5, hz0, hz1, M.inox);
+  boxW(hx1, hx1 + r, fy1, fy1 + 0.5, hz0, hz1, M.inox);
+  const cx = (hx0 + hx1) / 2;
+  const drain = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 0.4, 24), M.dark);
+  drain.position.set(cx, fy0 + 0.2, (hz0 + hz1) / 2); add(drain, false);
+  // الحنفية
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 2, 24), M.inox);
+  base.position.set(cx, fy1 + 1, 7); add(base);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 26, 20), M.inox);
+  neck.position.set(cx, fy1 + 2 + 13, 7); add(neck);
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 17, 20).rotateX(Math.PI / 2), M.inox);
+  spout.position.set(cx, fy1 + 27, 7 + 8.5); add(spout);
+  boxW(cx + 2.4, cx + 8, fy1 + 8, fy1 + 9.5, 6, 8, M.inox);
+}
+
+function buildAppliances() {
+  // ----- البوتجاز: x 0..62, z 105..190 (85 عرض)
+  const x1 = 62, z0 = 105, z1 = 190;
+  boxW(0, x1, 2, 89, z0, z1, M.inox);
+  boxW(0.5, x1 - 0.5, 89, 90.4, z0 + 0.5, z1 - 0.5, M.black);
+  const burner = (x, z, r) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1.4, 32), M.burner);
+    m.position.set(x, 91.1, z); add(m);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.62, r * 0.62, 1.8, 32), M.inox);
+    cap.position.set(x, 91.5, z); add(cap);
+  };
+  [17, 47].forEach(x => [125, 170].forEach(z => burner(x, z, 5.5)));
+  burner(32, 147.5, 6.5);
+  boxW(x1, x1 + 0.5, 72, 89, z0, z1, M.black);                   // لوحة المفاتيح
+  for (let i = 0; i < 5; i++) {
+    const z = z0 + 10 + i * (85 - 20) / 4;
+    const k = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 2.5, 24).rotateZ(Math.PI / 2), M.dark);
+    k.position.set(x1 + 1.75, 80.5, z); add(k);
+  }
+  boxW(x1, x1 + 0.6, 12, 70, z0 + 3, z1 - 3, M.inox);            // باب الفرن
+  boxW(x1 + 0.6, x1 + 0.9, 18, 62, z0 + 10, z1 - 10, M.black);   // زجاج الفرن
+  boxW(x1 + 0.6, x1 + 3.6, 66.5, 68, z0 + 8, z1 - 8, M.inox);    // يد الفرن
+  boxW(x1, x1 + 0.6, 2, 11, z0 + 3, z1 - 3, M.inox);             // درج الأنبوبة
+
+  // ----- التلاجة: z 125..190 (مساحة 65)
+  const d = 63, f0 = 126.5, f1 = 188.5;
+  B('right', f0, f1, 0, d - 0.8, 2, 178, M.dark);
+  B('right', f0 + 0.3, f1 - 0.3, d - 0.8, d, 2, 121.5, M.inox);
+  B('right', f0 + 0.3, f1 - 0.3, d - 0.8, d, 123.5, 177.7, M.inox);
+  B('right', f1 - 6.5, f1 - 5.5, d, d + 2.5, 90, 118, M.handle);
+  B('right', f1 - 6.5, f1 - 5.5, d, d + 2.5, 126, 150, M.handle);
+
+  // ----- الديب فريزر: z 190..255 (مساحة 65)
+  const g0 = 191.5, g1 = 253.5, fh = 170, n = 5, dh = (fh - 2 - (n - 1) * 0.6) / n;
+  B('right', g0, g1, 0, d - 0.8, 2, 2 + fh, M.dark);
+  for (let i = 0; i < n; i++) {
+    const ya = 2 + i * (dh + 0.6), yb = ya + dh;
+    B('right', g0 + 0.3, g1 - 0.3, d - 0.8, d, ya, yb, M.inox);
+    B('right', (g0 + g1) / 2 - 14, (g0 + g1) / 2 + 14, d, d + 2.4, yb - 6, yb - 5, M.handle);
+  }
+}
+
+function buildUppers(wa, wb) {
+  target = uppersG;
+  const UF = UD - FR;
+  // الحيطة الشمال
+  B('left', 0, L, 0, UF, UY, H, M.carcass);
+  upperFronts('left', 35, L, UY);
+  // الحيطة الأمامية (بدون ما نغطي الشباك)
+  if (wa - 35 >= 20) { B('top', 0, wa, 0, UF, UY, H, M.carcass); upperFronts('top', 35, wa, UY); }
+  if (190 - wb >= 20) { B('top', wb, W, 0, UF, UY, H, M.carcass); upperFronts('top', wb, 190, UY); }
+  // الحيطة اليمين
+  B('right', 0, 125, 0, UF, UY, H, M.carcass);
+  upperFronts('right', 35, 125, UY);
+  B('right', 125, 255, 0, UF, 190, H, M.carcass);     // فوق التلاجة والديب
+  upperFronts('right', 125, 255, 190);
+  // فوق النيش: مثلث بنفس زاوية النيش
+  const p0 = [190, 255], p1 = [W, 255 + 35 * 40 / 46];
+  const L2 = shiftedLine(p0, p1, FR);
+  prism([[W, 255], [xAt(L2, 255), 255], [W, zAt(L2, W)]], UY, H, M.carcass);
+  diagDoor(p0, p1, UY + 0.3, H - UTIER - 0.3, UY + 3, UY + 22);
+  diagDoor(p0, p1, H - UTIER + 0.3, H - 0.3, 0, 0);
+  target = model;
+}
+
+function buildAll() {
+  newModel();
+  const { win: [wa, wb], col: [ca, cb] } = fw();
+  buildShell(wa, wb, ca, cb);
+  buildBase(wa, wb);
+  buildAppliances();
+  buildUppers(wa, wb);
+  uppersG.visible = $('#optUp').checked;
+}
+
+/* ===================== المسقط 2D ===================== */
+function buildPlan() {
+  const { win: [wa, wb], col: [ca, cb] } = fw();
+  const hx0 = wa + 2, hx1 = wb - 2;
+  const pts = a => a.map(p => p.join(',')).join(' ');
+  const dimH = (y, x0, x1, t) => `<g class="dm"><line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}"/><line x1="${x0}" y1="${y - 3}" x2="${x0}" y2="${y + 3}"/><line x1="${x1}" y1="${y - 3}" x2="${x1}" y2="${y + 3}"/><text x="${(x0 + x1) / 2}" y="${y - 2}" text-anchor="middle">${t}</text></g>`;
+  const dimV = (x, z0, z1, t) => `<g class="dm"><line x1="${x}" y1="${z0}" x2="${x}" y2="${z1}"/><line x1="${x - 3}" y1="${z0}" x2="${x + 3}" y2="${z0}"/><line x1="${x - 3}" y1="${z1}" x2="${x + 3}" y2="${z1}"/><text transform="translate(${x - 2},${(z0 + z1) / 2}) rotate(-90)" text-anchor="middle">${t}</text></g>`;
+  const lb = (x, y, t, extra = '') => `<text x="${x}" y="${y}" class="lb" text-anchor="middle" ${extra}>${t}</text>`;
+
+  let s = `<svg viewBox="-75 -50 385 455" xmlns="http://www.w3.org/2000/svg">`;
+  s += `<defs><pattern id="hat" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff"/><line x1="0" y1="0" x2="0" y2="4" stroke="#555" stroke-width="1.2"/></pattern></defs>`;
+  s += `<rect x="0" y="0" width="${W}" height="${L}" fill="#fcfbf8"/>`;
+  // الرخام
+  s += `<polygon points="${pts([[0, 0], [W, 0], [W, 125], [160, 125], [160, 65], [65, 65], [65, 105], [0, 105]])}" class="ctr"/>`;
+  s += `<polygon points="${pts([[0, 190], [65, 190], [65, L], [0, L]])}" class="ctr"/>`;
+  s += `<polygon points="${pts([[W, 255], [160, 255], [206, 295], [W, 295]])}" class="ctr"/>`;
+  // الحوض
+  s += `<rect x="${hx0}" y="${SINK_Z[0]}" width="${hx1 - hx0}" height="${SINK_Z[1] - SINK_Z[0]}" class="snk"/>`;
+  s += lb((hx0 + hx1) / 2, 35, 'حوض 75');
+  // البوتجاز
+  s += `<rect x="0" y="105" width="62" height="85" class="app"/>`;
+  [[17, 125], [47, 125], [17, 170], [47, 170], [32, 147.5]].forEach(p => { s += `<circle cx="${p[0]}" cy="${p[1]}" r="5.5" fill="#fff" stroke="#333" stroke-width=".6"/>`; });
+  s += lb(100, 148, 'بوتجاز 85');
+  // التلاجة والديب
+  s += `<rect x="${W - 63}" y="126.5" width="63" height="62" class="app"/>` + lb(W - 31, 160, 'ثلاجة');
+  s += `<rect x="${W - 63}" y="191.5" width="63" height="62" class="app"/>` + lb(W - 31, 225, 'ديب فريزر');
+  s += lb(W - 18, 280, 'نيش', 'font-size="5"');
+  // الجدران
+  s += `<path d="M${-T} ${-T}H${W + T}V${L + T}H${-T}Z M0 0V${L}H${W}V0Z" fill="#9aa0a6" fill-rule="evenodd"/>`;
+  s += `<rect x="${OPEN[0]}" y="${L - 0.5}" width="${OPEN[1] - OPEN[0]}" height="${T + 1}" fill="#fff"/>`;
+  s += `<line x1="${OPEN[0]}" y1="${L}" x2="${OPEN[1]}" y2="${L}" stroke="#333" stroke-width=".6" stroke-dasharray="3 2"/>`;
+  // الأعمدة
+  s += `<rect x="${ca}" y="0" width="${cb - ca}" height="15" fill="url(#hat)" stroke="#333" stroke-width=".6"/>`;
+  s += `<rect x="65" y="${L - 25}" width="75" height="25" fill="url(#hat)" stroke="#333" stroke-width=".6"/>`;
+  s += lb((ca + cb) / 2, 27, 'عمود', 'font-size="5"');
+  s += lb(102, L - 29, 'عمود (بروز 25)', 'font-size="5"');
+  // الشباك
+  s += `<rect x="${wa}" y="${-T}" width="${wb - wa}" height="${T}" fill="#bfe3f5" stroke="#333" stroke-width=".6"/>`;
+  s += `<line x1="${(wa + wb) / 2}" y1="${-T}" x2="${(wa + wb) / 2}" y2="0" stroke="#333" stroke-width=".5"/>`;
+  s += lb((wa + wb) / 2, -5, 'شباك', 'font-size="5"');
+  // السلسلة العلوية
+  const topSegs = order === 'sketch' ? [[0, 50, '50'], [50, 125, '75'], [125, 180, '55'], [180, 225, '45']]
+                                    : [[0, 50, '50'], [50, 105, '55'], [105, 180, '75'], [180, 225, '45']];
+  topSegs.forEach(g => { s += dimH(-28, g[0], g[1], g[2]); });
+  [[0, 65, '65'], [65, 140, '75'], [140, 225, '85 (فتحة)']].forEach(g => { s += dimH(L + 30, g[0], g[1], g[2]); });
+  [[0, 65, '65'], [65, 105, '40'], [105, 190, '85'], [190, L, '146']].forEach(g => { s += dimV(-28, g[0], g[1], g[2]); });
+  s += dimV(-48, 0, L, '336');
+  [[0, 125, '125'], [125, 190, '65'], [190, 255, '65'], [255, 295, '40'], [295, L, '41*']].forEach(g => { s += dimV(W + 28, g[0], g[1], g[2]); });
+  s += dimV(W + 48, 0, L, '336');
+  s += dimH(215, 65, 160, '95 (محسوبة)');
+  s += `<polygon points="182,${L + 38} 178,${L + 45} 186,${L + 45}" fill="#333"/><line x1="182" y1="${L + 45}" x2="182" y2="${L + 58}" stroke="#333" stroke-width=".8"/>`;
+  s += lb(182, L + 68, 'مدخل (فتحة بدون باب)');
+  s += lb(W / 2, -42, 'حيطة الشباك', 'font-size="5"');
+  s += `</svg>`;
+  s += `<p style="text-align:center;font-size:13px;line-height:1.8">* = تقدير. الأرقام الحمرا بالسنتي.<br>ترتيب حيطة الشباك الحالي: ${order === 'sketch' ? 'زي الكروكي' : 'زي المكتوب'} (بيتغير من زرار «ترتيب حيطة الشباك»).</p>`;
+  return s;
+}
+
+/* ===================== الكاميرا والتنقل ===================== */
+const VIEWS = {
+  overview: { label: 'نظرة عامة',            pos: [330, 360, 560], target: [112, 110, 168], fov: 45, uppers: true },
+  top:      { label: 'من فوق',               pos: [112, 640, 235], target: [112, 0, 168],   fov: 42, uppers: false },
+  entrance: { label: 'من الباب',             pos: [188, 158, 346], target: [90, 125, 95],   fov: 68, uppers: true },
+  sink:     { label: 'ناحية الحوض والشباك',  pos: [112, 150, 305], target: [95, 135, 0],    fov: 62, uppers: true },
+  cooker:   { label: 'البوتجاز والرخامة',    pos: [150, 150, 205], target: [0, 105, 170],   fov: 62, uppers: true },
+  fridge:   { label: 'التلاجة والديب والنيش', pos: [75, 150, 165],  target: [225, 100, 250], fov: 62, uppers: true },
+  uppers:   { label: 'العلوي لحد السقف',     pos: [150, 95, 300],  target: [10, 225, 100],  fov: 70, uppers: true },
+};
+let tween = null, running = true;
+function goTo(k, instant = false) {
+  const v = VIEWS[k];
+  if (v.uppers !== undefined) { $('#optUp').checked = v.uppers; if (uppersG) uppersG.visible = v.uppers; }
+  const p1 = new THREE.Vector3(v.pos[0], v.pos[1], v.pos[2]);
+  const t1 = new THREE.Vector3(v.target[0], v.target[1], v.target[2]);
+  if (instant) {
+    camera.position.copy(p1); controls.target.copy(t1);
+    camera.fov = v.fov; camera.updateProjectionMatrix(); controls.update();
+    return;
+  }
+  tween = { t: 0, dur: 1.1, p0: camera.position.clone(), p1, t0: controls.target.clone(), t1, f0: camera.fov, f1: v.fov };
+}
+
+function updateWalls() {
+  const p = camera.position;
+  const set = (arr, v) => arr.forEach(m => { m.visible = v; });
+  set(wallParts.north, !(p.z < -T));
+  set(wallParts.south, !(p.z > L + T));
+  set(wallParts.west, !(p.x < -T));
+  set(wallParts.east, !(p.x > W + T));
+  if (backdrop) backdrop.visible = p.z > -30;
+}
+
+function resize() {
+  const w = c3d.clientWidth, h = c3d.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(c3d);
+window.addEventListener('resize', resize);
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  if (!running) return;
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (tween) {
+    tween.t = Math.min(1, tween.t + dt / tween.dur);
+    const k = tween.t * tween.t * (3 - 2 * tween.t);
+    camera.position.lerpVectors(tween.p0, tween.p1, k);
+    controls.target.lerpVectors(tween.t0, tween.t1, k);
+    camera.fov = tween.f0 + (tween.f1 - tween.f0) * k;
+    camera.updateProjectionMatrix();
+    if (tween.t >= 1) tween = null;
+  }
+  controls.update();
+  updateWalls();
+  renderer.render(scene, camera);
+});
+
+/* ===================== الواجهة ===================== */
+const planWrap = $('#planWrap'), notesWrap = $('#notesWrap');
+function showTab(t) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  c3d.classList.toggle('hidden', t !== '3d');
+  $('#hint').classList.toggle('hidden', t !== '3d');
+  planWrap.classList.toggle('hidden', t !== 'plan');
+  notesWrap.classList.toggle('hidden', t !== 'notes');
+  $('#views').classList.toggle('hidden', t !== '3d');
+  $('#opts').classList.toggle('hidden', t !== '3d');
+  running = (t === '3d');
+  if (t === '3d') resize();
+  if (t === 'plan') planWrap.innerHTML = buildPlan();
+}
+document.querySelectorAll('#tabs button').forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+
+const vb = $('#views');
+Object.keys(VIEWS).forEach(k => {
+  const b = document.createElement('button');
+  b.textContent = VIEWS[k].label;
+  b.onclick = () => goTo(k);
+  vb.appendChild(b);
+});
+$('#optUp').onchange = e => { uppersG.visible = e.target.checked; };
+$('#optSh').onchange = e => { lamp.castShadow = e.target.checked; sun.castShadow = e.target.checked; };
+$('#optSun').onchange = e => { sun.visible = e.target.checked; };
+$('#optExp').oninput = e => { renderer.toneMappingExposure = parseFloat(e.target.value); };
+$('#swap').onclick = () => {
+  order = order === 'sketch' ? 'text' : 'sketch';
+  $('#swap').textContent = 'ترتيب حيطة الشباك: ' + (order === 'sketch' ? 'زي الكروكي' : 'زي المكتوب');
+  buildAll();
+};
+
+buildAll();
+goTo('overview', true);
+resize();
+$('#loading').remove();
+</script>
+</body>
+</html>
